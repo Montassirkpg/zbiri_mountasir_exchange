@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      run-note:
+        description: 'Note about this run (optional)'
+        required: false
+        default: 'manual run'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 22.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Show dispatch input
+        run: |
+          echo "Dispatch input run-note=${{ github.event.inputs.run-note }}"
+
+      - name: Cache npm cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+          key: ${{ runner.os }}-npm-cache-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-cache-
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create env file
+        run: |
+          echo "PORT=3000" >> .env
+          echo "NODE_ENV=test" >> .env
+
+      - name: Run tests
+        id: run-tests
+        run: |
+          npm test
+          echo "test_date=$(date -u)" >> $GITHUB_OUTPUT
+          echo "test_status=$?" >> $GITHUB_OUTPUT
+        env:
+          PORT: 3000
+          NODE_ENV: test
+
+      - name: Build and minify
+        id: build
+        run: |
+          npm install terser -g
+          mkdir -p dist
+          terser scripts/index.js -o dist/index.min.js
+          terser src/changeLogic.js -o dist/changeLogic.min.js
+          cp public/index.html dist/
+          echo "build_date=$(date -u)" >> $GITHUB_OUTPUT
+          echo "build_size=$(du -sh dist | cut -f1)" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-node-${{ matrix.node-version }}
+          path: dist/
+          retention-days: 5
+
+      - name: Create job summary
+        run: |
+          echo "## Build and Test Summary for Node ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Run at: ${{ steps.run-tests.outputs.test_date }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ steps.run-tests.outputs.test_status == '0' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Info" >> $GITHUB_STEP_SUMMARY
+          echo "- Built at: ${{ steps.build.outputs.build_date }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Build size: ${{ steps.build.outputs.build_size }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifacts uploaded: dist-node-${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "test-results.json" ]; then
+            echo "### Detailed Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat test-results.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+        env:
+          CI: true
