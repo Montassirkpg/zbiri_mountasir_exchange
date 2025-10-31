@@ -32,6 +32,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      - name: Set lowercased repository name
+        id: repo_lower
+        run: echo "repo_lower=$(echo \"$GITHUB_REPOSITORY\" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image to GHCR
         uses: docker/build-push-action@v4
         with:
@@ -39,8 +43,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/zbiri_mountasir_exchange:latest
-            ghcr.io/${{ github.repository_owner }}/zbiri_mountasir_exchange:${{ github.sha }}
+            ghcr.io/${{ steps.repo_lower.outputs.repo_lower }}:latest
+            ghcr.io/${{ steps.repo_lower.outputs.repo_lower }}:${{ github.sha }}
 
       - name: Dockerize summary
         run: |
