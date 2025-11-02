@@ -68,6 +68,6 @@ jobs:
       - name: Sonar summary
         if: success()
         run: |
-          echo "SonarQube analysis finished (if run). Check your Sonar instance at: ${{ secrets.SONAR_HOST_URL }}"
+          echo "SonarQube analysis finished. Check your SonarCloud dashboard for results."
 
 
