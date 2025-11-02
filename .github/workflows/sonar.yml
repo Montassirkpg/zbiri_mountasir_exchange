@@ -1,0 +1,73 @@
+name: SonarQube Analysis
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  sonar:
+    name: SonarQube analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        continue-on-error: true
+
+      - name: Set up Java (required by Sonar Scanner)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Download Sonar Scanner CLI
+        run: |
+          # download a stable sonar-scanner-cli and unpack
+          wget -qO sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+          unzip -q sonar-scanner.zip
+          mv sonar-scanner-* sonar-scanner
+          echo "SONAR_SCANNER_HOME=$PWD/sonar-scanner" >> $GITHUB_ENV
+          echo "PATH=$PATH:$PWD/sonar-scanner/bin" >> $GITHUB_ENV
+
+      - name: Run SonarQube scanner
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          # If secrets are not set, skip analysis to avoid failing CI
+          if [ -z "$SONAR_HOST_URL" ] || [ -z "$SONAR_TOKEN" ]; then
+            echo "Missing SONAR_HOST_URL or SONAR_TOKEN secrets. Skipping SonarQube analysis.";
+            exit 0;
+          fi
+
+          # Compute a default project key (owner_repo) — override in sonar properties if you wish
+          PROJECT_KEY="${{ github.repository_owner }}_${{ github.event.repository.name }}"
+
+          sonar-scanner \
+            -Dsonar.projectKey="$PROJECT_KEY" \
+            -Dsonar.organization="${{ github.repository_owner }}" \
+            -Dsonar.sources=. \
+            -Dsonar.host.url="$SONAR_HOST_URL" \
+            -Dsonar.login="$SONAR_TOKEN"
+
+      - name: Sonar summary
+        if: success()
+        run: |
+          echo "SonarQube analysis finished (if run). Check your Sonar instance at: ${{ secrets.SONAR_HOST_URL }}"
+
+
